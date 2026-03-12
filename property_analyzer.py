@@ -28,21 +28,22 @@ if st.button("🔍 Analyze with Grok", type="primary"):
         )
         
         system_prompt = """You are an expert real estate analyst. Use your web_search tool to research the given address in real time.
-Return ONLY valid JSON (no other text) in this exact format:
+You MUST return ONLY a valid JSON object — nothing else, no explanations, no markdown, no backticks.
+Exact format:
 {
   "off_market": true/false,
   "listing_status": "Active / Pending / Sold / Off Market / etc.",
   "listing_url": "full URL if found or null",
-  "photos": ["direct-image-url1.jpg", "direct-image-url2.jpg", ...] (max 8),
+  "photos": ["direct-image-url1.jpg", ...] (max 8),
   "valuation_estimate": "e.g. $450,000–$480,000 (Zestimate $462k)",
   "current_list_price": "$455,000 or N/A",
-  "red_flags": ["Red flag 1 with short explanation", "Red flag 2...", ...],
+  "red_flags": ["Red flag 1...", ...],
   "summary": "2–4 sentence purchase advice"
 }"""
         
         try:
             response = client.responses.create(
-                model="grok-4.20-beta-latest-non-reasoning",   # ← official recommended model (March 2026)
+                model="grok-4.20-beta-latest-non-reasoning",
                 input=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Address: {address}"}
@@ -50,16 +51,22 @@ Return ONLY valid JSON (no other text) in this exact format:
                 tools=[{"type": "web_search"}]
             )
             
-            # Extract final text from Responses API structure (different from old chat.completions)
-            final_text = ""
-            for item in response.output:
-                if hasattr(item, "content") and item.content:
-                    for content_item in item.content:
-                        if hasattr(content_item, "text"):
-                            final_text += content_item.text
-            raw_text = final_text.strip()
+            # === ROBUST TEXT EXTRACTION (official xAI way) ===
+            raw_text = ""
+            if hasattr(response, "output_text") and response.output_text:
+                raw_text = response.output_text.strip()
+            elif hasattr(response, "output") and response.output:
+                # Find the last item with text content
+                for item in reversed(response.output):
+                    if hasattr(item, "content") and item.content:
+                        for content_item in item.content:
+                            if hasattr(content_item, "text") and content_item.text:
+                                raw_text = content_item.text.strip()
+                                break
+                        if raw_text:
+                            break
             
-            # Clean markdown if Grok adds it
+            # Clean any leftover markdown
             if raw_text.startswith("```json"):
                 raw_text = raw_text.split("```json")[1].split("```")[0].strip()
             elif raw_text.startswith("```"):
@@ -67,11 +74,15 @@ Return ONLY valid JSON (no other text) in this exact format:
             
             data = json.loads(raw_text)
             
+        except json.JSONDecodeError:
+            st.error("❌ Grok did not return clean JSON. Here's exactly what it returned:")
+            st.code(raw_text or "EMPTY RESPONSE — this is the bug we can fix")
+            st.stop()
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.error(f"API Error: {str(e)}")
             st.stop()
 
-    # === RESULTS ===
+    # === RESULTS (same as before) ===
     col1, col2 = st.columns([2, 1])
     
     with col1:
