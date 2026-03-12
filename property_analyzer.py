@@ -6,7 +6,7 @@ st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
 st.title("🏠 Property Quick Analyzer")
 st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
 
-# API Key input (secure — never stored)
+# API Key input (secure)
 api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here", type="password", help="Get it from console.x.ai")
 
 if not api_key:
@@ -27,7 +27,7 @@ if st.button("🔍 Analyze with Grok", type="primary"):
             base_url="https://api.x.ai/v1"
         )
         
-        system_prompt = """You are an expert real estate analyst. Use your web_search and browsing tools to analyze the given address.
+        system_prompt = """You are an expert real estate analyst. Use your live_search tool (and any browsing capabilities) to analyze the given address in real time.
 Return ONLY valid JSON (no other text) in this exact format:
 {
   "off_market": true/false,
@@ -42,12 +42,12 @@ Return ONLY valid JSON (no other text) in this exact format:
         
         try:
             response = client.chat.completions.create(
-                model="grok-4.20-beta-0309-non-reasoning",   # ← Change only if you get a model error (check console.x.ai)
+                model="grok-4.20-beta-0309-non-reasoning",   # If you get a model error, check console.x.ai and replace with the exact model name shown there
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Address: {address}"}
                 ],
-                tools=[{"type": "web_search"}],
+                tools=[{"type": "live_search"}],   # ← THIS WAS THE FIX
                 response_format={"type": "json_object"}
             )
             raw_text = response.choices[0].message.content.strip()
