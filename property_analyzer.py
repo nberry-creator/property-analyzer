@@ -6,7 +6,7 @@ st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
 st.title("🏠 Property Quick Analyzer")
 st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
 
-# API Key input (secure — never stored in code)
+# API Key input (secure — never stored)
 api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here", type="password", help="Get it from console.x.ai")
 
 if not api_key:
@@ -41,18 +41,23 @@ Return ONLY valid JSON (no other text) in this exact format:
 }"""
         
         try:
-            response = client.responses.create(
-                model="grok-4.20-beta-0309-non-reasoning",
-                input=[
+            response = client.chat.completions.create(
+                model="grok-4.20-beta-0309-non-reasoning",   # ← Change only if you get a model error (check console.x.ai)
+                messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Address: {address}"}
                 ],
-                tools=[{"type": "web_search"}]
+                tools=[{"type": "web_search"}],
+                response_format={"type": "json_object"}
             )
             raw_text = response.choices[0].message.content.strip()
-            # Clean markdown if Grok adds it
+            
+            # Clean any markdown Grok might add
             if raw_text.startswith("```json"):
                 raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+            elif raw_text.startswith("```"):
+                raw_text = raw_text.split("```")[1].strip()
+            
             data = json.loads(raw_text)
             
         except Exception as e:
