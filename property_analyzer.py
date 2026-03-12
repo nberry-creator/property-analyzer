@@ -7,26 +7,26 @@ st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
 st.title("🏠 Property Quick Analyzer")
 st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
 
-# === AUTOMATIC API KEY LOADING (no more typing!) ===
+# === AUTOMATIC API KEY (from secrets) ===
 if "XAI_API_KEY" in st.secrets:
     api_key = st.secrets["XAI_API_KEY"]
     st.sidebar.success("✅ Secure key loaded automatically")
 else:
-    api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here (temporary fallback)", type="password", help="Get it from console.x.ai")
+    api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here (temporary)", type="password")
 
 if not api_key:
-    st.info("👈 Add your key in Streamlit Secrets (see instructions) or use the sidebar for now")
+    st.info("👈 Add your key in Streamlit Secrets")
     st.stop()
 
 address = st.text_input("Enter full property address (US only)", 
-                        placeholder="12345 N May Ave, Oklahoma City, OK 73120")
+                        placeholder="8800 Southwest 31st Terrace Oklahoma City OK 73179")
 
 if st.button("🔍 Analyze with Grok", type="primary"):
     if not address:
         st.error("Please enter an address")
         st.stop()
     
-    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, county records... (20–50 seconds)"):
+    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, county records... (25–55 seconds)"):
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.x.ai/v1"
@@ -34,22 +34,26 @@ if st.button("🔍 Analyze with Grok", type="primary"):
         
         system_prompt = """You are an expert real estate analyst. Use your web_search tool to research the given address in real time.
 
-**STRICT RULES FOR LISTING STATUS** (follow exactly):
-- Cross-check Zillow, Redfin, and Realtor.com.
-- ONLY set "off_market": false if you see an ACTIVE "For Sale" or "Active" listing WITH a current asking price.
-- If the page says "currently not for sale", "Off Market", "Sold", "Pending", or there is only a Zestimate with no asking price → "off_market": true and "listing_status": "Off Market".
-- The Zillow details page exists for almost every property — do NOT assume it is listed just because the page exists.
+STRICT LISTING RULES:
+- ONLY set "off_market": false if there is a true active "For Sale" listing with current asking price.
+- For Pending listings, still set "off_market": false and extract photos + full details.
 
-You MUST return ONLY clean raw JSON (no markdown, no **bold**, no explanations, no backticks). Always include a useful "summary" field with 2-4 sentences of purchase advice.
+You MUST return ONLY clean raw JSON. No markdown, no **bold**, no extra text.
+
+Especially for photos: If the property is listed or has a details page, ALWAYS extract 5–8 DIRECT high-resolution image URLs from the listing gallery (full .jpg or .webp links from Zillow/Redfin/Realtor — not thumbnails).
 
 Exact format:
 {
   "off_market": true/false,
   "listing_status": "Active / Pending / Sold / Off Market / etc.",
-  "listing_url": "full URL if found or null",
-  "photos": ["direct-image-url1.jpg", ...] (max 8),
-  "valuation_estimate": "e.g. $450,000–$480,000 (Zestimate $462k)",
-  "current_list_price": "$455,000 or N/A",
+  "listing_url": "full URL or null",
+  "photos": ["https://direct-image-url1.jpg", ...] (max 8),
+  "valuation_estimate": "e.g. $250,000–$270,000",
+  "current_list_price": "$250,990 or N/A",
+  "last_sale": "Sold MM/DD/YYYY for $XXX,XXX or N/A",
+  "zestimate": "$258,400 or N/A",
+  "redfin_estimate": "$252,100 or N/A",
+  "county_assessed_value": "$240,000 or N/A",
   "red_flags": ["Red flag 1...", ...],
   "summary": "2–4 sentence purchase advice"
 }"""
@@ -90,15 +94,11 @@ Exact format:
             
             data = json.loads(raw_text)
             
-        except json.JSONDecodeError:
-            st.error("❌ JSON parsing failed. Here's what Grok returned:")
-            st.code(raw_text or "EMPTY")
-            st.stop()
         except Exception as e:
-            st.error(f"API Error: {str(e)}")
+            st.error(f"Error: {str(e)}")
             st.stop()
 
-    # === RESULTS ===
+    # === RESULTS DISPLAY ===
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -108,7 +108,7 @@ Exact format:
             for url in photos[:8]:
                 st.image(url, use_column_width=True)
         else:
-            st.info("No current listing photos (property is likely off-market)")
+            st.info("No current listing photos found (may be very new or Pending)")
     
     with col2:
         st.subheader("Status")
@@ -117,9 +117,19 @@ Exact format:
             st.error(f"🔴 {status}")
         else:
             st.success(f"🟢 {status}")
-        st.metric("Valuation Estimate", data.get("valuation_estimate", "N/A"))
-        if data.get("current_list_price") and data.get("current_list_price") != "N/A":
-            st.metric("List Price", data.get("current_list_price"))
+        
+        # Clean full valuation display (no truncation)
+        st.subheader("Valuation Estimate")
+        st.markdown(f"**{data.get('valuation_estimate', 'N/A')}**")
+        
+        # NEW BULLET SECTION
+        st.subheader("📊 Valuation Details")
+        st.markdown(f"""
+- **Last Sale**: {data.get('last_sale', 'N/A')}
+- **Zestimate (Zillow)**: {data.get('zestimate', 'N/A')}
+- **Redfin Estimate**: {data.get('redfin_estimate', 'N/A')}
+- **County Assessed Value**: {data.get('county_assessed_value', 'N/A')}
+        """)
         
         st.subheader("🚩 Red Flags")
         flags = data.get("red_flags", [])
