@@ -8,10 +8,10 @@ st.title("🏠 Property Quick Analyzer")
 st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
 
 # API Key input (secure)
-api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here", type="password", help="Get it from console.x.ai")
+api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here", type="password", help="Get a NEW one from console.x.ai after revoking the old one")
 
 if not api_key:
-    st.info("👈 Enter your xAI API key in the sidebar to start")
+    st.info("👈 Enter your NEW xAI API key in the sidebar to start")
     st.stop()
 
 address = st.text_input("Enter full property address (US only)", 
@@ -29,8 +29,26 @@ if st.button("🔍 Analyze with Grok", type="primary"):
         )
         
         system_prompt = """You are an expert real estate analyst. Use your web_search tool to research the given address in real time.
-You MUST return ONLY raw JSON — no markdown, no bold, no italics, no backticks, no explanations, no extra text.
-Start directly with { and end directly with }. Nothing else."""
+
+**STRICT RULES FOR LISTING STATUS** (follow exactly):
+- Cross-check Zillow, Redfin, and Realtor.com.
+- ONLY set "off_market": false if you see an ACTIVE "For Sale" or "Active" listing WITH a current asking price.
+- If the page says "currently not for sale", "Off Market", "Sold", "Pending", or there is only a Zestimate with no asking price → "off_market": true and "listing_status": "Off Market".
+- The Zillow details page exists for almost every property — do NOT assume it is listed just because the page exists.
+
+You MUST return ONLY clean raw JSON (no markdown, no **bold**, no explanations, no backticks). Always include a useful "summary" field with 2-4 sentences of purchase advice.
+
+Exact format:
+{
+  "off_market": true/false,
+  "listing_status": "Active / Pending / Sold / Off Market / etc.",
+  "listing_url": "full URL if found or null",
+  "photos": ["direct-image-url1.jpg", ...] (max 8),
+  "valuation_estimate": "e.g. $450,000–$480,000 (Zestimate $462k)",
+  "current_list_price": "$455,000 or N/A",
+  "red_flags": ["Red flag 1...", ...],
+  "summary": "2–4 sentence purchase advice"
+}"""
         
         try:
             response = client.responses.create(
@@ -42,7 +60,7 @@ Start directly with { and end directly with }. Nothing else."""
                 tools=[{"type": "web_search"}]
             )
             
-            # === SUPER ROBUST TEXT EXTRACTION ===
+            # Robust text extraction
             raw_text = ""
             if hasattr(response, "output_text") and response.output_text:
                 raw_text = response.output_text.strip()
@@ -56,32 +74,28 @@ Start directly with { and end directly with }. Nothing else."""
                         if raw_text:
                             break
             
-            # === AGGRESSIVE CLEANING (this fixes the **{ issue) ===
+            # Aggressive cleaning
             raw_text = raw_text.strip()
-            raw_text = re.sub(r'^\s*\*\*', '', raw_text)   # remove leading **
-            raw_text = re.sub(r'\*\*\s*$', '', raw_text)   # remove trailing **
+            raw_text = re.sub(r'^\s*\*\*', '', raw_text)
+            raw_text = re.sub(r'\*\*\s*$', '', raw_text)
             raw_text = raw_text.strip('*').strip()
-            
-            # Extract just the JSON object if wrapped in anything
             json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
             if json_match:
                 raw_text = json_match.group(1)
-            
-            # Final cleanup for code blocks
             if raw_text.startswith("```"):
                 raw_text = raw_text.split("```", 2)[1].strip() if len(raw_text.split("```", 2)) > 1 else raw_text
             
             data = json.loads(raw_text)
             
         except json.JSONDecodeError:
-            st.error("❌ Still not clean JSON. Here's exactly what Grok returned:")
+            st.error("❌ JSON parsing failed. Here's what Grok returned:")
             st.code(raw_text or "EMPTY")
             st.stop()
         except Exception as e:
             st.error(f"API Error: {str(e)}")
             st.stop()
 
-    # === RESULTS ===
+    # === IMPROVED RESULTS DISPLAY ===
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -95,10 +109,11 @@ Start directly with { and end directly with }. Nothing else."""
     
     with col2:
         st.subheader("Status")
+        status = data.get("listing_status", "Unknown")
         if data.get("off_market"):
-            st.error("🔴 OFF-MARKET")
+            st.error(f"🔴 {status}")
         else:
-            st.success("🟢 Currently Listed")
+            st.success(f"🟢 {status}")
         st.metric("Valuation Estimate", data.get("valuation_estimate", "N/A"))
         if data.get("current_list_price") and data.get("current_list_price") != "N/A":
             st.metric("List Price", data.get("current_list_price"))
@@ -112,7 +127,10 @@ Start directly with { and end directly with }. Nothing else."""
             st.success("No major red flags detected")
     
     st.subheader("📋 Grok Summary")
-    st.markdown(data.get("summary", "No summary returned"))
+    st.markdown(data.get("summary", "No summary returned (this should never happen now)"))
     
     if data.get("listing_url"):
         st.markdown(f"[🔗 View Full Listing]({data['listing_url']})")
+
+    with st.expander("🔧 Debug: Raw JSON from Grok"):
+        st.json(data)
