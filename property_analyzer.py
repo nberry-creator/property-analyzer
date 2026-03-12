@@ -26,28 +26,25 @@ if st.button("🔍 Analyze with Grok", type="primary"):
         st.error("Please enter an address")
         st.stop()
     
-    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, county records... (25–55 seconds)"):
+    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, Oklahoma County Assessor... (25–55 seconds)"):
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.x.ai/v1"
         )
         
-        system_prompt = """You are an expert real estate analyst AND my trusted personal real estate advisor in Oklahoma City.
+        system_prompt = """You are my expert personal real estate advisor in Oklahoma City. Use web_search to research the exact address.
 
-**CRITICAL PHOTO INSTRUCTIONS** (do this every time):
-Find the Zillow/Redfin/Realtor.com listing page for the exact address. Open the photo gallery. Extract 5–8 **direct full-resolution image URLs** that will load directly in a browser. They must be real CDN links (usually start with https://photos.zillowstatic.com/fp/ or https://ap.rdcpix.com/ or similar high-res gallery src). Never return thumbnails or placeholders. If photos exist, return them — this property has 33+ on Zillow.
+STEP-BY-STEP EXTRACTION (do this every time):
+1. Search Zillow for the address → extract:
+   - Zestimate (exact value or "Zestimate not yet available on Zillow - new construction")
+   - Price History / Last Sale (exact date + price or "New Construction - No prior sale recorded")
+   - 5–8 direct high-res photo URLs from the gallery (must be full https://photos.zillowstatic.com/fp/... links that load directly)
+2. Search Redfin for the address → extract Redfin Estimate (or "Redfin Estimate not available yet - new construction")
+3. Search Oklahoma County Assessor (or property records) for the address → extract County Assessed Value (or "County assessment not yet updated - new construction")
 
-**SUMMARY INSTRUCTIONS**:
-Write the "summary" field EXACTLY as if you are my personal real estate advisor in Oklahoma City. Use natural, professional, conversational language. Be thorough (4–6 sentences). Always cover:
-- Key features and condition of THIS specific property
-- Pros and cons of the home and lot
-- Buffalo Farms subdivision and southwest Oklahoma City area (growth, amenities, future potential, market trends)
-- Western Heights School District (ratings and implications for families)
-- Risks of new construction + Pending status (builder warranty, HOA fees/rules, resale value in new community, backup offer risks)
-- What I should do next (inspections, builder walk-through, HOA docs review, financing tips, etc.)
-- Your honest recommendation at the current price
+If the property is brand new (2025+), use explanatory text instead of plain N/A.
 
-Return ONLY clean raw JSON. No markdown, no bold, no extra text. Use normal spacing and punctuation in every field.
+Return ONLY clean raw JSON. Use normal spacing.
 
 Exact format:
 {
@@ -57,10 +54,10 @@ Exact format:
   "photos": ["https://photos.zillowstatic.com/fp/...jpg", ...] (max 8),
   "valuation_estimate": "e.g. $240,000–$265,000",
   "current_list_price": "$250,990 or N/A",
-  "last_sale": "Sold MM/DD/YYYY for $XXX,XXX or N/A",
-  "zestimate": "$258,400 or N/A",
-  "redfin_estimate": "$252,100 or N/A",
-  "county_assessed_value": "$240,000 or N/A",
+  "last_sale": "exact text here or New Construction - No prior sale recorded",
+  "zestimate": "exact text here or Zestimate not yet available on Zillow - new construction",
+  "redfin_estimate": "exact text here or Redfin Estimate not available yet - new construction",
+  "county_assessed_value": "exact text here or County assessment not yet updated - new construction",
   "red_flags": ["Red flag 1...", ...],
   "summary": "Your thorough personal advisor paragraph here"
 }"""
@@ -75,7 +72,7 @@ Exact format:
                 tools=[{"type": "web_search"}]
             )
             
-            # Robust text extraction + cleaning
+            # Robust extraction + cleaning
             raw_text = ""
             if hasattr(response, "output_text") and response.output_text:
                 raw_text = response.output_text.strip()
@@ -115,7 +112,7 @@ Exact format:
             for url in photos[:8]:
                 st.image(url, use_column_width=True)
         else:
-            st.info("No current listing photos found (this sometimes happens on brand-new builds — try again in a few hours)")
+            st.info("No current listing photos found (sometimes delayed on brand-new builds)")
     
     with col2:
         st.subheader("Status")
