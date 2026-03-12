@@ -7,11 +7,15 @@ st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
 st.title("🏠 Property Quick Analyzer")
 st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
 
-# API Key input (secure)
-api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here", type="password", help="Get a NEW one from console.x.ai after revoking the old one")
+# === AUTOMATIC API KEY LOADING (no more typing!) ===
+if "XAI_API_KEY" in st.secrets:
+    api_key = st.secrets["XAI_API_KEY"]
+    st.sidebar.success("✅ Secure key loaded automatically")
+else:
+    api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here (temporary fallback)", type="password", help="Get it from console.x.ai")
 
 if not api_key:
-    st.info("👈 Enter your NEW xAI API key in the sidebar to start")
+    st.info("👈 Add your key in Streamlit Secrets (see instructions) or use the sidebar for now")
     st.stop()
 
 address = st.text_input("Enter full property address (US only)", 
@@ -60,7 +64,7 @@ Exact format:
                 tools=[{"type": "web_search"}]
             )
             
-            # Robust text extraction
+            # Robust text extraction + cleaning
             raw_text = ""
             if hasattr(response, "output_text") and response.output_text:
                 raw_text = response.output_text.strip()
@@ -74,7 +78,6 @@ Exact format:
                         if raw_text:
                             break
             
-            # Aggressive cleaning
             raw_text = raw_text.strip()
             raw_text = re.sub(r'^\s*\*\*', '', raw_text)
             raw_text = re.sub(r'\*\*\s*$', '', raw_text)
@@ -95,7 +98,7 @@ Exact format:
             st.error(f"API Error: {str(e)}")
             st.stop()
 
-    # === IMPROVED RESULTS DISPLAY ===
+    # === RESULTS ===
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -127,7 +130,7 @@ Exact format:
             st.success("No major red flags detected")
     
     st.subheader("📋 Grok Summary")
-    st.markdown(data.get("summary", "No summary returned (this should never happen now)"))
+    st.markdown(data.get("summary", "No summary returned"))
     
     if data.get("listing_url"):
         st.markdown(f"[🔗 View Full Listing]({data['listing_url']})")
