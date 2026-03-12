@@ -19,7 +19,22 @@ if not api_key:
     st.stop()
 
 address = st.text_input("Enter full property address (US only)", 
-                        placeholder="13120 4th St Grandview, MO 64030")
+                        placeholder="8800 Southwest 31st Terrace Oklahoma City OK 73179")
+
+def clean_text(text):
+    """Fix common smashed text issues from Grok JSON output"""
+    if not text:
+        return text
+    text = re.sub(r'(\d),(\d)', r'\1, \2', text)                    # 276,100 → 276, 100
+    text = re.sub(r'(\d)kand', r'\1k and', text)                    # 276kand → 276k and
+    text = re.sub(r'(\d),(\d)', r'\1, \2', text)                    # extra safety
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)                # Propertytaxes → Property taxes
+    text = re.sub(r'(\d)([A-Za-z])', r'\1 \2', text)                # 100while → 100 while
+    text = re.sub(r'([A-Za-z])(\d)', r'\1 \2', text)                # whileRedfin → while Redfin
+    text = text.replace("whileRedfin", "while Redfin")
+    text = text.replace("Propertytaxes", "Property taxes")
+    text = re.sub(r'\s+', ' ', text).strip()                        # clean extra spaces
+    return text
 
 if st.button("🔍 Analyze with Grok", type="primary"):
     if not address:
@@ -32,9 +47,11 @@ if st.button("🔍 Analyze with Grok", type="primary"):
             base_url="https://api.x.ai/v1"
         )
         
-        system_prompt = """You are my expert personal real estate advisor. Use web_search to research the exact address.
+        system_prompt = """You are my expert personal real estate advisor in Oklahoma City. Use web_search for the exact address.
 
 Return ONLY clean raw JSON. No markdown, no extra text.
+
+In the summary field, write in perfect natural English with proper spacing, commas, periods, and punctuation. Never glue words or numbers together (e.g. write "276,100 and Redfin estimates 215,757" — never "276,100whileRedfinestimates215,757"). Use normal sentences.
 
 Exact format:
 {
@@ -49,7 +66,7 @@ Exact format:
   "redfin_estimate": "exact text here or Redfin Estimate not available yet",
   "county_assessed_value": "exact text here or County assessment not yet updated",
   "red_flags": ["Red flag 1...", ...],
-  "summary": "Your thorough personal advisor paragraph here"
+  "summary": "Your thorough personal advisor paragraph here with perfect spacing"
 }"""
         
         try:
@@ -62,6 +79,7 @@ Exact format:
                 tools=[{"type": "web_search"}]
             )
             
+            # Extract + clean raw text
             raw_text = ""
             if hasattr(response, "output_text") and response.output_text:
                 raw_text = response.output_text.strip()
@@ -87,11 +105,15 @@ Exact format:
             
             data = json.loads(raw_text)
             
+            # Clean the summary
+            if "summary" in data:
+                data["summary"] = clean_text(data["summary"])
+            
         except Exception as e:
             st.error(f"Error: {str(e)}")
             st.stop()
 
-    # === CLEAN RESULTS (no photos, standardized formatting) ===
+    # === CLEAN RESULTS ===
     st.subheader("Status")
     status = data.get("listing_status", "Unknown")
     if data.get("off_market"):
@@ -99,11 +121,11 @@ Exact format:
     else:
         st.success(f"🟢 {status}")
 
-    # Valuation Estimate - clean metric
+    # Clean Valuation Estimate
     st.subheader("Valuation Estimate")
-    st.metric(label="", value=data.get("valuation_estimate", "N/A"))
+    st.markdown(f"**{data.get('valuation_estimate', 'N/A')}**")
 
-    # New Listing Info section
+    # Listing Info
     st.subheader("📋 Listing Info")
     col_a, col_b = st.columns(2)
     with col_a:
@@ -132,7 +154,7 @@ Exact format:
     else:
         st.success("No major red flags detected")
 
-    # Summary
+    # Clean Summary
     st.subheader("📋 Grok Summary (My Personal Advice)")
     st.markdown(data.get("summary", "No summary returned"))
 
