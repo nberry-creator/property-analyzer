@@ -1,0 +1,96 @@
+import streamlit as st
+from openai import OpenAI
+import json
+
+st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
+st.title("🏠 Property Quick Analyzer")
+st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
+
+# API Key input (secure — never stored in code)
+api_key = st.sidebar.text_input("🔑 Paste your xAI API Key here", type="password", help="Get it from console.x.ai")
+
+if not api_key:
+    st.info("👈 Enter your xAI API key in the sidebar to start")
+    st.stop()
+
+address = st.text_input("Enter full property address (US only)", 
+                        placeholder="12345 N May Ave, Oklahoma City, OK 73120")
+
+if st.button("🔍 Analyze with Grok", type="primary"):
+    if not address:
+        st.error("Please enter an address")
+        st.stop()
+    
+    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, county records... (20–45 seconds)"):
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.x.ai/v1"
+        )
+        
+        system_prompt = """You are an expert real estate analyst. Use your web_search and browsing tools to analyze the given address.
+Return ONLY valid JSON (no other text) in this exact format:
+{
+  "off_market": true/false,
+  "listing_status": "Active / Pending / Sold / Off Market / etc.",
+  "listing_url": "full URL if found or null",
+  "photos": ["direct-image-url1.jpg", "direct-image-url2.jpg", ...] (max 8),
+  "valuation_estimate": "e.g. $450,000–$480,000 (Zestimate $462k)",
+  "current_list_price": "$455,000 or N/A",
+  "red_flags": ["Red flag 1 with short explanation", "Red flag 2...", ...],
+  "summary": "2–4 sentence purchase advice"
+}"""
+        
+        try:
+            response = client.responses.create(
+                model="grok-4.20-beta-0309-non-reasoning",
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Address: {address}"}
+                ],
+                tools=[{"type": "web_search"}]
+            )
+            raw_text = response.choices[0].message.content.strip()
+            # Clean markdown if Grok adds it
+            if raw_text.startswith("```json"):
+                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+            data = json.loads(raw_text)
+            
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+            st.stop()
+
+    # === RESULTS ===
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("📸 Current Listing Photos")
+        photos = data.get("photos", [])
+        if photos:
+            for url in photos[:8]:
+                st.image(url, use_column_width=True)
+        else:
+            st.info("No current listing photos (property is likely off-market)")
+    
+    with col2:
+        st.subheader("Status")
+        if data.get("off_market"):
+            st.error("🔴 OFF-MARKET")
+        else:
+            st.success("🟢 Currently Listed")
+        st.metric("Valuation Estimate", data.get("valuation_estimate", "N/A"))
+        if data.get("current_list_price") and data.get("current_list_price") != "N/A":
+            st.metric("List Price", data.get("current_list_price"))
+        
+        st.subheader("🚩 Red Flags")
+        flags = data.get("red_flags", [])
+        if flags:
+            for flag in flags:
+                st.warning(flag)
+        else:
+            st.success("No major red flags detected")
+    
+    st.subheader("📋 Grok Summary")
+    st.markdown(data.get("summary", "No summary returned"))
+    
+    if data.get("listing_url"):
+        st.markdown(f"[🔗 View Full Listing]({data['listing_url']})")
