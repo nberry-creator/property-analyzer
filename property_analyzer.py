@@ -21,13 +21,13 @@ if st.button("🔍 Analyze with Grok", type="primary"):
         st.error("Please enter an address")
         st.stop()
     
-    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, county records... (20–45 seconds)"):
+    with st.spinner("Grok is searching Zillow, Redfin, Realtor.com, county records... (20–50 seconds)"):
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.x.ai/v1"
         )
         
-        system_prompt = """You are an expert real estate analyst. Use your web_search tool (and any browsing capabilities) to analyze the given address in real time.
+        system_prompt = """You are an expert real estate analyst. Use your web_search tool to research the given address in real time.
 Return ONLY valid JSON (no other text) in this exact format:
 {
   "off_market": true/false,
@@ -41,18 +41,25 @@ Return ONLY valid JSON (no other text) in this exact format:
 }"""
         
         try:
-            response = client.chat.completions.create(
-                model="grok-4.20-beta-latest-non-reasoning",   # ← Updated to current recommended model name
-                messages=[
+            response = client.responses.create(
+                model="grok-4.20-beta-latest-non-reasoning",   # ← official recommended model (March 2026)
+                input=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Address: {address}"}
                 ],
-                tools=[{"type": "web_search"}],   # ← THIS IS THE FIX (current xAI tool)
-                response_format={"type": "json_object"}
+                tools=[{"type": "web_search"}]
             )
-            raw_text = response.choices[0].message.content.strip()
             
-            # Clean any markdown Grok might add
+            # Extract final text from Responses API structure (different from old chat.completions)
+            final_text = ""
+            for item in response.output:
+                if hasattr(item, "content") and item.content:
+                    for content_item in item.content:
+                        if hasattr(content_item, "text"):
+                            final_text += content_item.text
+            raw_text = final_text.strip()
+            
+            # Clean markdown if Grok adds it
             if raw_text.startswith("```json"):
                 raw_text = raw_text.split("```json")[1].split("```")[0].strip()
             elif raw_text.startswith("```"):
