@@ -27,7 +27,7 @@ if st.button("🔍 Analyze with Grok", type="primary"):
             base_url="https://api.x.ai/v1"
         )
         
-        system_prompt = """You are an expert real estate analyst. Use your live_search tool (and any browsing capabilities) to analyze the given address in real time.
+        system_prompt = """You are an expert real estate analyst. Use your web_search tool (and any browsing capabilities) to analyze the given address in real time.
 Return ONLY valid JSON (no other text) in this exact format:
 {
   "off_market": true/false,
@@ -42,12 +42,12 @@ Return ONLY valid JSON (no other text) in this exact format:
         
         try:
             response = client.chat.completions.create(
-                model="grok-4.20-beta-0309-non-reasoning",   # If you get a model error, check console.x.ai and replace with the exact model name shown there
+                model="grok-4.20-beta-latest-non-reasoning",   # ← Updated to current recommended model name
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Address: {address}"}
                 ],
-                tools=[{"type": "live_search"}],   # ← THIS WAS THE FIX
+                tools=[{"type": "web_search"}],   # ← THIS IS THE FIX (current xAI tool)
                 response_format={"type": "json_object"}
             )
             raw_text = response.choices[0].message.content.strip()
