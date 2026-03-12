@@ -7,7 +7,7 @@ st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
 st.title("🏠 Property Quick Analyzer")
 st.caption("Live photos • Valuation • Red flags • Off-market check | Powered by Grok")
 
-# === AUTOMATIC API KEY (from secrets) ===
+# === AUTOMATIC API KEY ===
 if "XAI_API_KEY" in st.secrets:
     api_key = st.secrets["XAI_API_KEY"]
     st.sidebar.success("✅ Secure key loaded automatically")
@@ -32,30 +32,37 @@ if st.button("🔍 Analyze with Grok", type="primary"):
             base_url="https://api.x.ai/v1"
         )
         
-        system_prompt = """You are an expert real estate analyst. Use your web_search tool to research the given address in real time.
+        system_prompt = """You are an expert real estate analyst AND my trusted personal real estate advisor in Oklahoma City.
 
-STRICT LISTING RULES:
-- ONLY set "off_market": false if there is a true active "For Sale" listing with current asking price.
-- For Pending listings, still set "off_market": false and extract photos + full details.
+**CRITICAL PHOTO INSTRUCTIONS** (do this every time):
+Find the Zillow/Redfin/Realtor.com listing page for the exact address. Open the photo gallery. Extract 5–8 **direct full-resolution image URLs** that will load directly in a browser. They must be real CDN links (usually start with https://photos.zillowstatic.com/fp/ or https://ap.rdcpix.com/ or similar high-res gallery src). Never return thumbnails or placeholders. If photos exist, return them — this property has 33+ on Zillow.
 
-You MUST return ONLY clean raw JSON. No markdown, no **bold**, no extra text.
+**SUMMARY INSTRUCTIONS**:
+Write the "summary" field EXACTLY as if you are my personal real estate advisor in Oklahoma City. Use natural, professional, conversational language. Be thorough (4–6 sentences). Always cover:
+- Key features and condition of THIS specific property
+- Pros and cons of the home and lot
+- Buffalo Farms subdivision and southwest Oklahoma City area (growth, amenities, future potential, market trends)
+- Western Heights School District (ratings and implications for families)
+- Risks of new construction + Pending status (builder warranty, HOA fees/rules, resale value in new community, backup offer risks)
+- What I should do next (inspections, builder walk-through, HOA docs review, financing tips, etc.)
+- Your honest recommendation at the current price
 
-Especially for photos: If the property is listed or has a details page, ALWAYS extract 5–8 DIRECT high-resolution image URLs from the listing gallery (full .jpg or .webp links from Zillow/Redfin/Realtor — not thumbnails).
+Return ONLY clean raw JSON. No markdown, no bold, no extra text. Use normal spacing and punctuation in every field.
 
 Exact format:
 {
   "off_market": true/false,
   "listing_status": "Active / Pending / Sold / Off Market / etc.",
   "listing_url": "full URL or null",
-  "photos": ["https://direct-image-url1.jpg", ...] (max 8),
-  "valuation_estimate": "e.g. $250,000–$270,000",
+  "photos": ["https://photos.zillowstatic.com/fp/...jpg", ...] (max 8),
+  "valuation_estimate": "e.g. $240,000–$265,000",
   "current_list_price": "$250,990 or N/A",
   "last_sale": "Sold MM/DD/YYYY for $XXX,XXX or N/A",
   "zestimate": "$258,400 or N/A",
   "redfin_estimate": "$252,100 or N/A",
   "county_assessed_value": "$240,000 or N/A",
   "red_flags": ["Red flag 1...", ...],
-  "summary": "2–4 sentence purchase advice"
+  "summary": "Your thorough personal advisor paragraph here"
 }"""
         
         try:
@@ -98,7 +105,7 @@ Exact format:
             st.error(f"Error: {str(e)}")
             st.stop()
 
-    # === RESULTS DISPLAY ===
+    # === RESULTS ===
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -108,7 +115,7 @@ Exact format:
             for url in photos[:8]:
                 st.image(url, use_column_width=True)
         else:
-            st.info("No current listing photos found (may be very new or Pending)")
+            st.info("No current listing photos found (this sometimes happens on brand-new builds — try again in a few hours)")
     
     with col2:
         st.subheader("Status")
@@ -118,11 +125,9 @@ Exact format:
         else:
             st.success(f"🟢 {status}")
         
-        # Clean full valuation display (no truncation)
         st.subheader("Valuation Estimate")
         st.markdown(f"**{data.get('valuation_estimate', 'N/A')}**")
         
-        # NEW BULLET SECTION
         st.subheader("📊 Valuation Details")
         st.markdown(f"""
 - **Last Sale**: {data.get('last_sale', 'N/A')}
@@ -139,7 +144,7 @@ Exact format:
         else:
             st.success("No major red flags detected")
     
-    st.subheader("📋 Grok Summary")
+    st.subheader("📋 Grok Summary (My Personal Advice)")
     st.markdown(data.get("summary", "No summary returned"))
     
     if data.get("listing_url"):
