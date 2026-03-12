@@ -1,6 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import json
+import re
 
 st.set_page_config(page_title="Property Quick Analyzer", layout="wide")
 st.title("🏠 Property Quick Analyzer")
@@ -28,18 +29,8 @@ if st.button("🔍 Analyze with Grok", type="primary"):
         )
         
         system_prompt = """You are an expert real estate analyst. Use your web_search tool to research the given address in real time.
-You MUST return ONLY a valid JSON object — nothing else, no explanations, no markdown, no backticks.
-Exact format:
-{
-  "off_market": true/false,
-  "listing_status": "Active / Pending / Sold / Off Market / etc.",
-  "listing_url": "full URL if found or null",
-  "photos": ["direct-image-url1.jpg", ...] (max 8),
-  "valuation_estimate": "e.g. $450,000–$480,000 (Zestimate $462k)",
-  "current_list_price": "$455,000 or N/A",
-  "red_flags": ["Red flag 1...", ...],
-  "summary": "2–4 sentence purchase advice"
-}"""
+You MUST return ONLY raw JSON — no markdown, no bold, no italics, no backticks, no explanations, no extra text.
+Start directly with { and end directly with }. Nothing else."""
         
         try:
             response = client.responses.create(
@@ -51,12 +42,11 @@ Exact format:
                 tools=[{"type": "web_search"}]
             )
             
-            # === ROBUST TEXT EXTRACTION (official xAI way) ===
+            # === SUPER ROBUST TEXT EXTRACTION ===
             raw_text = ""
             if hasattr(response, "output_text") and response.output_text:
                 raw_text = response.output_text.strip()
             elif hasattr(response, "output") and response.output:
-                # Find the last item with text content
                 for item in reversed(response.output):
                     if hasattr(item, "content") and item.content:
                         for content_item in item.content:
@@ -66,23 +56,32 @@ Exact format:
                         if raw_text:
                             break
             
-            # Clean any leftover markdown
-            if raw_text.startswith("```json"):
-                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-            elif raw_text.startswith("```"):
-                raw_text = raw_text.split("```")[1].strip()
+            # === AGGRESSIVE CLEANING (this fixes the **{ issue) ===
+            raw_text = raw_text.strip()
+            raw_text = re.sub(r'^\s*\*\*', '', raw_text)   # remove leading **
+            raw_text = re.sub(r'\*\*\s*$', '', raw_text)   # remove trailing **
+            raw_text = raw_text.strip('*').strip()
+            
+            # Extract just the JSON object if wrapped in anything
+            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+            if json_match:
+                raw_text = json_match.group(1)
+            
+            # Final cleanup for code blocks
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("```", 2)[1].strip() if len(raw_text.split("```", 2)) > 1 else raw_text
             
             data = json.loads(raw_text)
             
         except json.JSONDecodeError:
-            st.error("❌ Grok did not return clean JSON. Here's exactly what it returned:")
-            st.code(raw_text or "EMPTY RESPONSE — this is the bug we can fix")
+            st.error("❌ Still not clean JSON. Here's exactly what Grok returned:")
+            st.code(raw_text or "EMPTY")
             st.stop()
         except Exception as e:
             st.error(f"API Error: {str(e)}")
             st.stop()
 
-    # === RESULTS (same as before) ===
+    # === RESULTS ===
     col1, col2 = st.columns([2, 1])
     
     with col1:
